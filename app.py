@@ -4,7 +4,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-# Page configuration
+# Page configuration (Wide layout)
 st.set_page_config(
     page_title="Synsex Performance Report", page_icon="📊", layout="wide"
 )
@@ -73,9 +73,9 @@ st.markdown(
 )
 
 
-# --- DATA LOADING (Hybrid: Repo file + Web Uploader) ---
+# --- AUTOMATIC DATA LOADING FROM REPOSITORY ---
 @st.cache_data
-def load_default_data():
+def load_data():
   for file in os.listdir("."):
     if file.lower().endswith((".xlsx", ".xls")):
       try:
@@ -90,24 +90,7 @@ def load_default_data():
   return None
 
 
-# Sidebar for optional live file upload & other filters
-st.sidebar.header("📁 Data Source & Filters")
-uploaded_file = st.sidebar.file_uploader(
-    "Upload New Data File (Optional)", type=["csv", "xlsx", "xls"]
-)
-
-if uploaded_file is not None:
-  try:
-    if uploaded_file.name.endswith(".csv"):
-      df = pd.read_csv(uploaded_file)
-    else:
-      df = pd.read_excel(uploaded_file)
-    st.sidebar.success("Using newly uploaded file!")
-  except Exception as e:
-    st.sidebar.error(f"Error reading file: {e}")
-    df = load_default_data()
-else:
-  df = load_default_data()
+df = load_data()
 
 if df is not None:
   # Clean column names
@@ -165,58 +148,59 @@ if df is not None:
   else:
     df["Talk_Time_Sec"] = 0.0
 
-  # --- TOP BUTTONS FOR QUEUES ---
-  if "Queue" in df.columns:
-    unique_queues = list(df["Queue"].dropna().unique())
-    # Top 3 queues ya available queues select karna
-    q1 = unique_queues[0] if len(unique_queues) > 0 else "Queue 1"
-    q2 = unique_queues[1] if len(unique_queues) > 1 else "Queue 2"
-    q3 = unique_queues[2] if len(unique_queues) > 2 else "Queue 3"
+  # --- TOP CONTROLS SECTION (Queue Buttons & Filters) ---
+  st.markdown("### 🎛️ Report Filters & Queue Selection")
 
-    st.markdown("#### 🎯 Quick Queue Selector")
-    b_col1, b_col2, b_col3, b_col4 = st.columns(4)
+  ctrl_col1, ctrl_col2, ctrl_col3 = st.columns([2, 1, 1])
 
-    # Initialize session state for selected queue filter
-    if "selected_queue_btn" not in st.session_state:
-      st.session_state.selected_queue_btn = "All"
+  # 1. Queue Buttons at Top
+  with ctrl_col1:
+    st.markdown("**Select Queue:**")
+    if "Queue" in df.columns:
+      unique_queues = list(df["Queue"].dropna().unique())
+      q1 = unique_queues[0] if len(unique_queues) > 0 else "Queue 1"
+      q2 = unique_queues[1] if len(unique_queues) > 1 else "Queue 2"
+      q3 = unique_queues[2] if len(unique_queues) > 2 else "Queue 3"
 
-    with b_col1:
-      if st.button("🌐 All Queues", use_container_width=True):
+      if "selected_queue_btn" not in st.session_state:
         st.session_state.selected_queue_btn = "All"
-    with b_col2:
-      if st.button(f"📌 {q1}", use_container_width=True):
-        st.session_state.selected_queue_btn = q1
-    with b_col3:
-      if st.button(f"📌 {q2}", use_container_width=True):
-        st.session_state.selected_queue_btn = q2
-    with b_col4:
-      if len(unique_queues) > 2:
-        if st.button(f"📌 {q3}", use_container_width=True):
-          st.session_state.selected_queue_btn = q3
 
-    # Apply queue filter based on clicked button
-    current_sel = st.session_state.selected_queue_btn
-    st.info(f"Showing data for: **{current_sel}**")
-    if current_sel != "All":
-      df = df[df["Queue"] == current_sel]
+      qb1, qb2, qb3, qb4 = st.columns(4)
+      with qb1:
+        if st.button("All", use_container_width=True):
+          st.session_state.selected_queue_btn = "All"
+      with qb2:
+        if st.button(q1, use_container_width=True):
+          st.session_state.selected_queue_btn = q1
+      with qb3:
+        if st.button(q2, use_container_width=True):
+          st.session_state.selected_queue_btn = q2
+      with qb4:
+        if len(unique_queues) > 2:
+          if st.button(q3, use_container_width=True):
+            st.session_state.selected_queue_btn = q3
+
+      current_sel = st.session_state.selected_queue_btn
+      if current_sel != "All":
+        df = df[df["Queue"] == current_sel]
+
+  # 2. Month Filter at Top
+  with ctrl_col2:
+    if "Month" in df.columns:
+      months = ["All"] + list(df["Month"].dropna().unique())
+      selected_month = st.selectbox("Filter by Month", months)
+      if selected_month != "All":
+        df = df[df["Month"] == selected_month]
+
+  # 3. Week Filter at Top
+  with ctrl_col3:
+    if "Week" in df.columns:
+      weeks = ["All"] + list(df["Week"].dropna().unique())
+      selected_week = st.selectbox("Filter by Week", weeks)
+      if selected_week != "All":
+        df = df[df["Week"] == selected_week]
 
   st.markdown("---")
-
-  # --- SIDEBAR FILTERS (Month & Week) ---
-  st.sidebar.markdown("---")
-  st.sidebar.subheader("🔍 Additional Filters")
-
-  if "Month" in df.columns:
-    months = ["All"] + list(df["Month"].dropna().unique())
-    selected_month = st.sidebar.selectbox("Filter by Month", months)
-    if selected_month != "All":
-      df = df[df["Month"] == selected_month]
-
-  if "Week" in df.columns:
-    weeks = ["All"] + list(df["Week"].dropna().unique())
-    selected_week = st.sidebar.selectbox("Filter by Week", weeks)
-    if selected_week != "All":
-      df = df[df["Week"] == selected_week]
 
   # --- CALCULATIONS & METRICS ---
   rec_calls = (
@@ -401,6 +385,6 @@ if df is not None:
 
 else:
   st.error(
-      "⚠️ No data file found! Please upload a file via the sidebar or add one"
-      " to your GitHub repository."
+      "⚠️ Data file (`wfm_data.csv` or Excel) not found in the GitHub"
+      " repository! Please make sure the file is uploaded."
   )
