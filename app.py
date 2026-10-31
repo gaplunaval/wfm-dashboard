@@ -90,8 +90,8 @@ def load_default_data():
   return None
 
 
-# Sidebar for optional live file upload
-st.sidebar.header("📁 Data Source & Other Filters")
+# Sidebar for optional live file upload & other filters
+st.sidebar.header("📁 Data Source & Filters")
 uploaded_file = st.sidebar.file_uploader(
     "Upload New Data File (Optional)", type=["csv", "xlsx", "xls"]
 )
@@ -165,14 +165,40 @@ if df is not None:
   else:
     df["Talk_Time_Sec"] = 0.0
 
-  # --- TOP QUEUE FILTER BUTTON/DROPDOWN ---
+  # --- TOP BUTTONS FOR QUEUES ---
   if "Queue" in df.columns:
-    queues = ["All"] + list(df["Queue"].dropna().unique())
-    selected_queue = st.selectbox(
-        "🎯 Select Queue (Top Report Filter)", queues, key="top_queue_select"
-    )
-    if selected_queue != "All":
-      df = df[df["Queue"] == selected_queue]
+    unique_queues = list(df["Queue"].dropna().unique())
+    # Top 3 queues ya available queues select karna
+    q1 = unique_queues[0] if len(unique_queues) > 0 else "Queue 1"
+    q2 = unique_queues[1] if len(unique_queues) > 1 else "Queue 2"
+    q3 = unique_queues[2] if len(unique_queues) > 2 else "Queue 3"
+
+    st.markdown("#### 🎯 Quick Queue Selector")
+    b_col1, b_col2, b_col3, b_col4 = st.columns(4)
+
+    # Initialize session state for selected queue filter
+    if "selected_queue_btn" not in st.session_state:
+      st.session_state.selected_queue_btn = "All"
+
+    with b_col1:
+      if st.button("🌐 All Queues", use_container_width=True):
+        st.session_state.selected_queue_btn = "All"
+    with b_col2:
+      if st.button(f"📌 {q1}", use_container_width=True):
+        st.session_state.selected_queue_btn = q1
+    with b_col3:
+      if st.button(f"📌 {q2}", use_container_width=True):
+        st.session_state.selected_queue_btn = q2
+    with b_col4:
+      if len(unique_queues) > 2:
+        if st.button(f"📌 {q3}", use_container_width=True):
+          st.session_state.selected_queue_btn = q3
+
+    # Apply queue filter based on clicked button
+    current_sel = st.session_state.selected_queue_btn
+    st.info(f"Showing data for: **{current_sel}**")
+    if current_sel != "All":
+      df = df[df["Queue"] == current_sel]
 
   st.markdown("---")
 
