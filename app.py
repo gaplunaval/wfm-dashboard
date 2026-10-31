@@ -18,7 +18,7 @@ st.markdown(
         background: linear-gradient(90deg, #1f77b4, #2ca02c, #ff7f0e);
         padding: 10px;
         border-radius: 8px;
-        margin-bottom: 20px;
+        margin-bottom: 15px;
         overflow: hidden;
         white-space: nowrap;
     }
@@ -91,7 +91,7 @@ def load_default_data():
 
 
 # Sidebar for optional live file upload
-st.sidebar.header("📁 Data Source & Filters")
+st.sidebar.header("📁 Data Source & Other Filters")
 uploaded_file = st.sidebar.file_uploader(
     "Upload New Data File (Optional)", type=["csv", "xlsx", "xls"]
 )
@@ -165,9 +165,20 @@ if df is not None:
   else:
     df["Talk_Time_Sec"] = 0.0
 
-  # --- SIDEBAR FILTERS ---
+  # --- TOP QUEUE FILTER BUTTON/DROPDOWN ---
+  if "Queue" in df.columns:
+    queues = ["All"] + list(df["Queue"].dropna().unique())
+    selected_queue = st.selectbox(
+        "🎯 Select Queue (Top Report Filter)", queues, key="top_queue_select"
+    )
+    if selected_queue != "All":
+      df = df[df["Queue"] == selected_queue]
+
+  st.markdown("---")
+
+  # --- SIDEBAR FILTERS (Month & Week) ---
   st.sidebar.markdown("---")
-  st.sidebar.subheader("🔍 Filter Data")
+  st.sidebar.subheader("🔍 Additional Filters")
 
   if "Month" in df.columns:
     months = ["All"] + list(df["Month"].dropna().unique())
@@ -180,12 +191,6 @@ if df is not None:
     selected_week = st.sidebar.selectbox("Filter by Week", weeks)
     if selected_week != "All":
       df = df[df["Week"] == selected_week]
-
-  if "Queue" in df.columns:
-    queues = ["All"] + list(df["Queue"].dropna().unique())
-    selected_queue = st.sidebar.selectbox("Filter by Queue", queues)
-    if selected_queue != "All":
-      df = df[df["Queue"] == selected_queue]
 
   # --- CALCULATIONS & METRICS ---
   rec_calls = (
