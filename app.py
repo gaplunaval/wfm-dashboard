@@ -4,18 +4,18 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-# Page configuration (Wide layout)
+# Page configuration
 st.set_page_config(
     page_title="Synsex Performance Report", page_icon="📊", layout="wide"
 )
 
-# --- CUSTOM CSS FOR ANIMATED CARDS & MARQUEE HEADER ---
+# --- CUSTOM CSS FOR DARK BLUE TABS & ANIMATED CARDS ---
 st.markdown(
     """
     <style>
     /* Marquee Animation for Top Title */
     .marquee-container {
-        background: linear-gradient(90deg, #1f77b4, #2ca02c, #ff7f0e);
+        background: linear-gradient(90deg, #1b365d, #0056b3, #1b365d);
         padding: 10px;
         border-radius: 8px;
         margin-bottom: 15px;
@@ -35,15 +35,35 @@ st.markdown(
         100% { transform: translateX(100%); }
     }
 
+    /* Dark Blue Styling for Streamlit Tabs */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+        background-color: #f1f3f5;
+        padding: 10px;
+        border-radius: 8px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        background-color: #1b365d !important;
+        color: white !important;
+        border-radius: 6px;
+        padding: 10px 20px;
+        font-weight: bold;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #004085 !important;
+        border-bottom: 3px solid #ff7f0e;
+    }
+
     /* Animated KPI Cards */
     .kpi-card {
         background: #ffffff;
-        padding: 20px;
+        padding: 18px;
         border-radius: 12px;
         box-shadow: 0 4px 15px rgba(0,0,0,0.08);
         text-align: center;
-        border-left: 5px solid #1f77b4;
+        border-left: 5px solid #1b365d;
         transition: transform 0.3s ease, box-shadow 0.3s ease;
+        margin-bottom: 10px;
     }
     .kpi-card:hover {
         transform: translateY(-5px);
@@ -51,16 +71,16 @@ st.markdown(
         border-left: 5px solid #ff7f0e;
     }
     .kpi-title {
-        font-size: 14px;
+        font-size: 13px;
         font-weight: 600;
         color: #6c757d;
-        margin-bottom: 8px;
+        margin-bottom: 6px;
         text-transform: uppercase;
     }
     .kpi-value {
-        font-size: 26px;
+        font-size: 22px;
         font-weight: bold;
-        color: #2c3e50;
+        color: #1b365d;
     }
     </style>
     
@@ -96,31 +116,9 @@ if df is not None:
   # Clean column names
   df.columns = df.columns.str.strip()
 
-  # Convert call metrics safely to numeric
-  numeric_cols = [
-      "Received Calls",
-      "Answered Calls",
-      "Answered in SLA",
-      "Abandoned Calls",
-      "Talk Time",
-      "Talktime",
-  ]
-  for col in numeric_cols:
-    if col in df.columns:
-      df[col] = pd.to_numeric(
-          df[col].astype(str).str.replace(",", ""), errors="coerce"
-      ).fillna(0)
 
-  # Detect Talk Time column correctly
-  talktime_col = None
-  for col in ["Talk Time", "Talktime", "Handle Time", "AHT"]:
-    if col in df.columns:
-      talktime_col = col
-      break
-
-
-  # Helper function to convert Talk Time
-  def parse_talk_time(val):
+  # Helper function to convert time format (hh:mm:ss or mm:ss or seconds) to total seconds
+  def time_to_seconds(val):
     if pd.isna(val):
       return 0.0
     if isinstance(val, (int, float)):
@@ -143,48 +141,87 @@ if df is not None:
       return 0.0
 
 
-  if talktime_col:
-    df["Talk_Time_Sec"] = df[talktime_col].apply(parse_talk_time)
-  else:
-    df["Talk_Time_Sec"] = 0.0
+  # Helper function to convert seconds back to hh:mm:ss format for display
+  def seconds_to_time_format(seconds):
+    if pd.isna(seconds) or seconds == 0:
+      return "00:00:00"
+    int_sec = int(round(seconds))
+    hrs = int_sec // 3600
+    mins = (int_sec % 3600) // 60
+    secs = int_sec % 60
+    if hrs > 0:
+      return f"{hrs:02d}:{mins:02d}:{secs:02d}"
+    else:
+      return f"{mins:02d}:{secs:02d}"
 
-  # --- TOP CONTROLS SECTION (Queue Buttons & Filters) ---
+
+  # Convert time/numeric columns based on new headers
+  time_cols = [
+      "Staff time",
+      "Net Login time",
+      "Break time",
+      "Avail time",
+      "Total Talk time",
+      "Total ACW Time",
+      "Hold time",
+      "Outbound Talk time",
+  ]
+  for col in time_cols:
+    if col in df.columns:
+      df[f"{col}_sec"] = df[col].apply(time_to_seconds)
+
+  num_cols = [
+      "HC",
+      "Schedule",
+      "Present",
+      "Absent_New",
+      "WO",
+      "Leave",
+      "Received Calls",
+  ]
+  for col in num_cols:
+    if col in df.columns:
+      df[col] = pd.to_numeric(
+          df[col].astype(str).str.replace(",", ""), errors="coerce"
+      ).fillna(0)
+
+  # --- TOP CONTROLS: QUEUE / SKILL & FILTERS ---
   st.markdown("### 🎛️ Report Filters & Queue Selection")
-
   ctrl_col1, ctrl_col2, ctrl_col3 = st.columns([2, 1, 1])
 
-  # 1. Queue Buttons at Top
   with ctrl_col1:
-    st.markdown("**Select Queue:**")
-    if "Queue" in df.columns:
-      unique_queues = list(df["Queue"].dropna().unique())
-      q1 = unique_queues[0] if len(unique_queues) > 0 else "Queue 1"
-      q2 = unique_queues[1] if len(unique_queues) > 1 else "Queue 2"
-      q3 = unique_queues[2] if len(unique_queues) > 2 else "Queue 3"
+    st.markdown("**Select Skill / Queue:**")
+    skill_col_name = (
+        "Skill/Type" if "Skill/Type" in df.columns else "Process"
+    )
+    if skill_col_name in df.columns:
+      unique_skills = list(df[skill_col_name].dropna().unique())
+      s1 = unique_skills[0] if len(unique_skills) > 0 else "Skill 1"
+      s2 = unique_skills[1] if len(unique_skills) > 1 else "Skill 2"
+      s3 = unique_skills[2] if len(unique_skills) > 2 else "Skill 3"
 
-      if "selected_queue_btn" not in st.session_state:
-        st.session_state.selected_queue_btn = "All"
+      if "selected_skill_btn" not in st.session_state:
+        st.session_state.selected_skill_btn = "All"
 
-      qb1, qb2, qb3, qb4 = st.columns(4)
-      with qb1:
+      sb1, sb2, sb3, sb4 = st.columns(4)
+      with sb1:
         if st.button("All", use_container_width=True):
-          st.session_state.selected_queue_btn = "All"
-      with qb2:
-        if st.button(q1, use_container_width=True):
-          st.session_state.selected_queue_btn = q1
-      with qb3:
-        if st.button(q2, use_container_width=True):
-          st.session_state.selected_queue_btn = q2
-      with qb4:
-        if len(unique_queues) > 2:
-          if st.button(q3, use_container_width=True):
-            st.session_state.selected_queue_btn = q3
+          st.session_state.selected_skill_btn = "All"
+      with sb2:
+        if st.button(str(s1), use_container_width=True):
+          st.session_state.selected_skill_btn = s1
+      with sb3:
+        if st.button(str(s2), use_container_width=True):
+          st.session_state.selected_skill_btn = s2
+      with sb4:
+        if len(unique_skills) > 2:
+          if st.button(str(s3), use_container_width=True):
+            st.session_state.selected_skill_btn = s3
 
-      current_sel = st.session_state.selected_queue_btn
-      if current_sel != "All":
-        df = df[df["Queue"] == current_sel]
+      current_skill = st.session_state.selected_skill_btn
+      if current_skill != "All":
+        df = df[df[skill_col_name] == current_skill]
 
-  # 2. Month Filter at Top
   with ctrl_col2:
     if "Month" in df.columns:
       months = ["All"] + list(df["Month"].dropna().unique())
@@ -192,7 +229,6 @@ if df is not None:
       if selected_month != "All":
         df = df[df["Month"] == selected_month]
 
-  # 3. Week Filter at Top
   with ctrl_col3:
     if "Week" in df.columns:
       weeks = ["All"] + list(df["Week"].dropna().unique())
@@ -202,189 +238,292 @@ if df is not None:
 
   st.markdown("---")
 
-  # --- CALCULATIONS & METRICS ---
-  rec_calls = (
-      df["Received Calls"].sum() if "Received Calls" in df.columns else 0
-  )
-  ans_calls = (
-      df["Answered Calls"].sum() if "Answered Calls" in df.columns else 0
-  )
-  ans_sla = (
-      df["Answered in SLA"].sum() if "Answered in SLA" in df.columns else 0
-  )
-  abnd_calls = (
-      df["Abandoned Calls"].sum() if "Abandoned Calls" in df.columns else 0
-  )
+  # --- CREATE 6 TABS WITH DARK BLUE STYLING ---
+  tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+      "Summary & KPI",
+      "Day wise",
+      "Week wise",
+      "Supervisor wise",
+      "Agent wise",
+      "Month wise",
+  ])
 
-  calc_sla = (ans_sla / rec_calls * 100) if rec_calls > 0 else 0
-  total_talktime = df["Talk_Time_Sec"].sum()
-  aht = (total_talktime / ans_calls) if ans_calls > 0 else 0
+  # ================= TAB 1: SUMMARY & KPI =================
+  with tab1:
+    st.subheader("📊 Summary & KPI Operational Dashboard")
 
-  # --- ANIMATED KPI CARDS SECTION ---
-  st.markdown("### 📊 Operational Summary KPIs")
-  kpi1, kpi2, kpi3, kpi4, kpi5, kpi6 = st.columns(6)
+    # Sum metrics
+    tot_hc = df["HC"].sum() if "HC" in df.columns else 0
+    tot_sched = df["Schedule"].sum() if "Schedule" in df.columns else 0
+    tot_pres = df["Present"].sum() if "Present" in df.columns else 0
+    tot_abs = df["Absent_New"].sum() if "Absent_New" in df.columns else 0
+    tot_wo = df["WO"].sum() if "WO" in df.columns else 0
+    tot_leave = df["Leave"].sum() if "Leave" in df.columns else 0
 
-  with kpi1:
-    st.markdown(
-        f"""
-        <div class="kpi-card">
-            <div class="kpi-title">Received Calls</div>
-            <div class="kpi-value">{int(rec_calls):,}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    tot_staff_sec = (
+        df["Staff time_sec"].sum() if "Staff time_sec" in df.columns else 0
     )
-  with kpi2:
-    st.markdown(
-        f"""
-        <div class="kpi-card">
-            <div class="kpi-title">Answered Calls</div>
-            <div class="kpi-value">{int(ans_calls):,}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    tot_net_sec = (
+        df["Net Login time_sec"].sum()
+        if "Net Login time_sec" in df.columns
+        else 0
     )
-  with kpi3:
-    st.markdown(
-        f"""
-        <div class="kpi-card">
-            <div class="kpi-title">Answered in SLA</div>
-            <div class="kpi-value">{int(ans_sla):,}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    tot_break_sec = (
+        df["Break time_sec"].sum() if "Break time_sec" in df.columns else 0
     )
-  with kpi4:
-    st.markdown(
-        f"""
-        <div class="kpi-card">
-            <div class="kpi-title">Abandoned Calls</div>
-            <div class="kpi-value">{int(abnd_calls):,}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    tot_avail_sec = (
+        df["Avail time_sec"].sum() if "Avail time_sec" in df.columns else 0
     )
-  with kpi5:
-    st.markdown(
-        f"""
-        <div class="kpi-card">
-            <div class="kpi-title">SLA %</div>
-            <div class="kpi-value">{calc_sla:.2f}%</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    tot_talk_sec = (
+        df["Total Talk time_sec"].sum()
+        if "Total Talk time_sec" in df.columns
+        else 0
     )
-  with kpi6:
-    st.markdown(
-        f"""
-        <div class="kpi-card">
-            <div class="kpi-title">AHT (Sec)</div>
-            <div class="kpi-value">{aht:.2f}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    tot_acw_sec = (
+        df["Total ACW Time_sec"].sum()
+        if "Total ACW Time_sec" in df.columns
+        else 0
+    )
+    tot_rec_calls = (
+        df["Received Calls"].sum() if "Received Calls" in df.columns else 0
     )
 
-  st.markdown("<br>", unsafe_allow_html=True)
-  st.markdown("---")
+    # Row 1 KPIs: Headcount & Attendance
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    with c1:
+      st.markdown(
+          f'<div class="kpi-card"><div class="kpi-title">Total Headcount</div><div'
+          f' class="kpi-value">{int(tot_hc):,}</div></div>',
+          unsafe_allow_html=True,
+      )
+    with c2:
+      st.markdown(
+          f'<div class="kpi-card"><div class="kpi-title">Total'
+          f' Schedule</div><div class="kpi-value">{int(tot_sched):,}</div></div>',
+          unsafe_allow_html=True,
+      )
+    with c3:
+      st.markdown(
+          f'<div class="kpi-card"><div class="kpi-title">Total'
+          f' Present</div><div class="kpi-value">{int(tot_pres):,}</div></div>',
+          unsafe_allow_html=True,
+      )
+    with c4:
+      st.markdown(
+          f'<div class="kpi-card"><div class="kpi-title">Total'
+          f' Absent</div><div class="kpi-value">{int(tot_abs):,}</div></div>',
+          unsafe_allow_html=True,
+      )
+    with c5:
+      st.markdown(
+          f'<div class="kpi-card"><div class="kpi-title">Total'
+          f' WO</div><div class="kpi-value">{int(tot_wo):,}</div></div>',
+          unsafe_allow_html=True,
+      )
+    with c6:
+      st.markdown(
+          f'<div class="kpi-card"><div class="kpi-title">Total'
+          f' Leave</div><div class="kpi-value">{int(tot_leave):,}</div></div>',
+          unsafe_allow_html=True,
+      )
 
-  # --- GROUPING FOR TRENDS ---
-  group_col = "Date" if "Date" in df.columns else (
-      "Day" if "Day" in df.columns else None
-  )
+    # Row 2 KPIs: Time & Calls
+    cc1, cc2, cc3, cc4, cc5, cc6, cc7 = st.columns(7)
+    with cc1:
+      st.markdown(
+          f'<div class="kpi-card"><div class="kpi-title">Staff Time</div><div'
+          f' class="kpi-value">{seconds_to_time_format(tot_staff_sec)}</div></div>',
+          unsafe_allow_html=True,
+      )
+    with cc2:
+      st.markdown(
+          f'<div class="kpi-card"><div class="kpi-title">Net Login'
+          f' Time</div><div'
+          f' class="kpi-value">{seconds_to_time_format(tot_net_sec)}</div></div>',
+          unsafe_allow_html=True,
+      )
+    with cc3:
+      st.markdown(
+          f'<div class="kpi-card"><div class="kpi-title">Break'
+          f' Time</div><div'
+          f' class="kpi-value">{seconds_to_time_format(tot_break_sec)}</div></div>',
+          unsafe_allow_html=True,
+      )
+    with cc4:
+      st.markdown(
+          f'<div class="kpi-card"><div class="kpi-title">Avail'
+          f' Time</div><div'
+          f' class="kpi-value">{seconds_to_time_format(tot_avail_sec)}</div></div>',
+          unsafe_allow_html=True,
+      )
+    with cc5:
+      st.markdown(
+          f'<div class="kpi-card"><div class="kpi-title">Total Talk'
+          f' Time</div><div'
+          f' class="kpi-value">{seconds_to_time_format(tot_talk_sec)}</div></div>',
+          unsafe_allow_html=True,
+      )
+    with cc6:
+      st.markdown(
+          f'<div class="kpi-card"><div class="kpi-title">Total ACW'
+          f' Time</div><div'
+          f' class="kpi-value">{seconds_to_time_format(tot_acw_sec)}</div></div>',
+          unsafe_allow_html=True,
+      )
+    with cc7:
+      st.markdown(
+          f'<div class="kpi-card"><div class="kpi-title">Received'
+          f' Calls</div><div class="kpi-value">{int(tot_rec_calls):,}</div></div>',
+          unsafe_allow_html=True,
+      )
 
-  if group_col and not df.empty:
-    agg_dict = {
-        "Received Calls": "sum" if "Received Calls" in df.columns else "count",
-        "Answered Calls": "sum" if "Answered Calls" in df.columns else "count",
-        "Answered in SLA": "sum" if "Answered in SLA" in df.columns else "count",
-        "Abandoned Calls": "sum" if "Abandoned Calls" in df.columns else "count",
-        "Talk_Time_Sec": "sum",
-    }
+  # ================= TAB 2: DAY WISE =================
+  with tab2:
+    st.subheader("📅 Day Wise Performance Report")
+    day_col = "Day" if "Day" in df.columns else ("Date" if "Date" in df.columns else None)
+    if day_col:
+      agg_cols = {}
+      for c in [
+          "HC",
+          "Schedule",
+          "Present",
+          "Absent_New",
+          "WO",
+          "Leave",
+          "Received Calls",
+          "Staff time_sec",
+          "Net Login time_sec",
+          "Break time_sec",
+          "Avail time_sec",
+          "Total Talk time_sec",
+          "Total ACW Time_sec",
+      ]:
+        if c in df.columns:
+          agg_cols[c] = "sum"
 
-    trend_df = df.groupby(group_col).agg(agg_dict).reset_index()
-
-    if "Received Calls" in trend_df.columns and "Answered in SLA" in trend_df.columns:
-      trend_df["SLA_Pct"] = (
-          trend_df["Answered in SLA"] / trend_df["Received Calls"] * 100
-      ).fillna(0)
+      day_df = df.groupby(day_col).agg(agg_cols).reset_index()
+      st.dataframe(day_df, use_container_width=True)
     else:
-      trend_df["SLA_Pct"] = 0
+      st.warning("Day or Date column not found in data.")
 
-    trend_df["AHT"] = (
-        trend_df["Talk_Time_Sec"] / trend_df["Answered Calls"]
-    ).fillna(0)
+  # ================= TAB 3: WEEK WISE =================
+  with tab3:
+    st.subheader("📆 Week Wise Performance Report")
+    if "Week" in df.columns:
+      agg_cols = {}
+      for c in [
+          "HC",
+          "Schedule",
+          "Present",
+          "Absent_New",
+          "WO",
+          "Leave",
+          "Received Calls",
+          "Staff time_sec",
+          "Net Login time_sec",
+          "Break time_sec",
+          "Avail time_sec",
+          "Total Talk time_sec",
+          "Total ACW Time_sec",
+      ]:
+        if c in df.columns:
+          agg_cols[c] = "sum"
 
-    st.subheader(f"📈 Performance Trend Analysis (By {group_col})")
+      week_df = df.groupby("Week").agg(agg_cols).reset_index()
+      st.dataframe(week_df, use_container_width=True)
+    else:
+      st.warning("Week column not found in data.")
 
-    available_line_metrics = ["SLA_Pct", "AHT"]
-    if "Abandoned Calls" in trend_df.columns:
-      available_line_metrics.append("Abandoned Calls")
-
-    chart_metric = st.selectbox(
-        "Select Secondary Line Metric for Combination Chart",
-        available_line_metrics,
+  # ================= TAB 4: SUPERVISOR WISE =================
+  with tab4:
+    st.subheader("👔 Supervisor Wise Performance Report")
+    sup_col = (
+        "Supervisor"
+        if "Supervisor" in df.columns
+        else ("Shift Manager" if "Shift Manager" in df.columns else None)
     )
+    if sup_col:
+      agg_cols = {}
+      for c in [
+          "HC",
+          "Schedule",
+          "Present",
+          "Absent_New",
+          "WO",
+          "Leave",
+          "Received Calls",
+          "Staff time_sec",
+          "Net Login time_sec",
+          "Break time_sec",
+          "Avail time_sec",
+          "Total Talk time_sec",
+          "Total ACW Time_sec",
+      ]:
+        if c in df.columns:
+          agg_cols[c] = "sum"
 
-    # --- COLUMN & LINE COMBINATION CHART ---
-    fig = go.Figure()
+      sup_df = df.groupby(sup_col).agg(agg_cols).reset_index()
+      st.dataframe(sup_df, use_container_width=True)
+    else:
+      st.warning("Supervisor column not found in data.")
 
-    if "Received Calls" in trend_df.columns:
-      fig.add_trace(
-          go.Bar(
-              x=trend_df[group_col],
-              y=trend_df["Received Calls"],
-              name="Received Calls",
-              marker_color="#1f77b4",
-          )
-      )
-    if "Answered Calls" in trend_df.columns:
-      fig.add_trace(
-          go.Bar(
-              x=trend_df[group_col],
-              y=trend_df["Answered Calls"],
-              name="Answered Calls",
-              marker_color="#2ca02c",
-          )
-      )
-
-    fig.add_trace(
-        go.Scatter(
-            x=trend_df[group_col],
-            y=trend_df[chart_metric],
-            name=chart_metric,
-            yaxis="y2",
-            mode="lines+markers",
-            line=dict(color="#ff7f0e", width=3),
-        )
+  # ================= TAB 5: AGENT WISE =================
+  with tab5:
+    st.subheader("agents Agent Wise Performance Report")
+    agent_col = (
+        "Name"
+        if "Name" in df.columns
+        else ("Emp ID" if "Emp ID" in df.columns else None)
     )
+    if agent_col:
+      agg_cols = {}
+      for c in [
+          "Received Calls",
+          "Staff time_sec",
+          "Net Login time_sec",
+          "Break time_sec",
+          "Avail time_sec",
+          "Total Talk time_sec",
+          "Total ACW Time_sec",
+      ]:
+        if c in df.columns:
+          agg_cols[c] = "sum"
 
-    fig.update_layout(
-        title=f"Call Volume Columns with {chart_metric} Trend Line",
-        xaxis=dict(title=group_col),
-        yaxis=dict(title="Call Volume", side="left"),
-        yaxis2=dict(
-            title=chart_metric,
-            overlaying="y",
-            side="right",
-            showgrid=False,
-        ),
-        legend=dict(
-            orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
-        ),
-        margin=dict(l=20, r=20, t=50, b=20),
-        height=450,
-    )
+      agent_df = df.groupby([agent_col]).agg(agg_cols).reset_index()
+      st.dataframe(agent_df, use_container_width=True)
+    else:
+      st.warning("Agent Name or Emp ID column not found in data.")
 
-    st.plotly_chart(fig, use_container_width=True)
+  # ================= TAB 6: MONTH WISE =================
+  with tab6:
+    st.subheader("🗓️ Month Wise Performance Report")
+    if "Month" in df.columns:
+      agg_cols = {}
+      for c in [
+          "HC",
+          "Schedule",
+          "Present",
+          "Absent_New",
+          "WO",
+          "Leave",
+          "Received Calls",
+          "Staff time_sec",
+          "Net Login time_sec",
+          "Break time_sec",
+          "Avail time_sec",
+          "Total Talk time_sec",
+          "Total ACW Time_sec",
+      ]:
+        if c in df.columns:
+          agg_cols[c] = "sum"
 
-  st.markdown("---")
-
-  if st.checkbox("Show Filtered Raw Data Table"):
-    st.dataframe(df, use_container_width=True)
+      month_df = df.groupby("Month").agg(agg_cols).reset_index()
+      st.dataframe(month_df, use_container_width=True)
+    else:
+      st.warning("Month column not found in data.")
 
 else:
   st.error(
-      "⚠️ Data file (`wfm_data.csv` or Excel) not found in the GitHub"
-      " repository! Please make sure the file is uploaded."
+      "⚠️ Data file not found in the GitHub repository! Please make sure your"
+      " updated dataset file is uploaded."
   )
