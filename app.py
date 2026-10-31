@@ -1,5 +1,3 @@
-import tkinter as tk
-from tkinter import filedialog
 import pandas as pd
 import streamlit as st
 
@@ -8,40 +6,25 @@ st.set_page_config(
     page_title="WFM Performance Dashboard", page_icon="📊", layout="wide"
 )
 
-
-# Function to select file via popup window
-def get_file_path():
-  root = tk.Tk()
-  root.withdraw()  # Hide the main tkinter window
-  root.attributes("-topmost", True)  # Bring dialog to the front
-  file_path = filedialog.askopenfilename(
-      title="Select WFM Raw Data File",
-      filetypes=[("Excel Files", "*.xlsx *.xls"), ("CSV Files", "*.csv")],
-  )
-  return file_path
-
-
-# Sidebar for file loading
+# Sidebar for file loading using Streamlit native uploader (Cloud Compatible)
 st.sidebar.header("📁 Data Source")
-if "df" not in st.session_state:
-  st.session_state.df = None
-
-if st.sidebar.button("Browse & Select File from PC"):
-  path = get_file_path()
-  if path:
-    try:
-      if path.endswith(".csv"):
-        st.session_state.df = pd.read_csv(path)
-      else:
-        st.session_state.df = pd.read_excel(path)
-      st.sidebar.success("File successfully loaded!")
-    except Exception as e:
-      st.sidebar.error(f"Error loading file: {e}")
-  else:
-      st.sidebar.warning("No file selected.")
+uploaded_file = st.sidebar.file_uploader(
+    "Upload WFM Raw Data File", type=["csv", "xlsx", "xls"]
+)
 
 # Main Dashboard Logic
-df = st.session_state.df
+if uploaded_file is not None:
+  try:
+    if uploaded_file.name.endswith(".csv"):
+      df = pd.read_csv(uploaded_file)
+    else:
+      df = pd.read_excel(uploaded_file)
+    st.sidebar.success("File successfully loaded!")
+  except Exception as e:
+    st.sidebar.error(f"Error loading file: {e}")
+    df = None
+else:
+  df = None
 
 if df is not None:
   st.title("📈 WFM Daily Performance Dashboard")
@@ -53,9 +36,6 @@ if df is not None:
 
   # Summary Metrics Cards / KPIs
   st.subheader("📊 Operational Summary")
-
-  # Assuming column names match your raw data fields (Agent, Supervisor, Calls, Login, Shrinkage, etc.)
-  # You can adjust column names here based on your actual file columns
   col1, col2, col3, col4 = st.columns(4)
 
   with col1:
@@ -92,13 +72,12 @@ if df is not None:
     else:
       filtered_df = df
   else:
-    filtered_df = df
+      filtered_df = df
 
   st.dataframe(filtered_df, use_container_width=True)
 
 else:
   st.info(
-      "👉 Please click the **'Browse & Select File from PC'** button in the"
-      " sidebar to upload your OneDrive/Local raw data file and view the"
-      " report."
+      "👉 Please upload your WFM raw data file using the sidebar option on the"
+      " left to view the report."
   )
