@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 import streamlit as st
 
@@ -10,17 +11,21 @@ st.title("📈 WFM Daily Performance Dashboard")
 st.markdown("---")
 
 
-# Load data automatically from the repository files
+# Automatically find and load any Excel or CSV file in the repository
 @st.cache_data
 def load_data():
-  try:
-    # Yahan apni file ka naam likhein jo aap GitHub par upload karenge (jaise 'wfm_data.xlsx' ya 'wfm_data.csv')
-    return pd.read_excel("wfm_data.xlsx")
-  except Exception as e:
-    try:
-      return pd.read_csv("wfm_data.csv")
-    except Exception as ex:
-      return None
+  for file in os.listdir("."):
+    if file.lower().endswith((".xlsx", ".xls")):
+      try:
+        return pd.read_excel(file)
+      except Exception:
+        pass
+    elif file.lower().endswith(".csv"):
+      try:
+        return pd.read_csv(file)
+      except Exception:
+        pass
+  return None
 
 
 df = load_data()
@@ -74,6 +79,6 @@ if df is not None:
 
 else:
   st.error(
-      "⚠️ Data file not found in repository! Please upload your data file"
-      " (`wfm_data.xlsx` or `wfm_data.csv`) to your GitHub repository."
+      "⚠️ No Excel or CSV data file found in the repository! Please upload"
+      " your data file to GitHub."
   )
