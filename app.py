@@ -6,30 +6,26 @@ st.set_page_config(
     page_title="WFM Performance Dashboard", page_icon="📊", layout="wide"
 )
 
-# Sidebar for file loading using Streamlit native uploader (Cloud Compatible)
-st.sidebar.header("📁 Data Source")
-uploaded_file = st.sidebar.file_uploader(
-    "Upload WFM Raw Data File", type=["csv", "xlsx", "xls"]
-)
+st.title("📈 WFM Daily Performance Dashboard")
+st.markdown("---")
 
-# Main Dashboard Logic
-if uploaded_file is not None:
+
+# Load data automatically from the repository files
+@st.cache_data
+def load_data():
   try:
-    if uploaded_file.name.endswith(".csv"):
-      df = pd.read_csv(uploaded_file)
-    else:
-      df = pd.read_excel(uploaded_file)
-    st.sidebar.success("File successfully loaded!")
+    # Yahan apni file ka naam likhein jo aap GitHub par upload karenge (jaise 'wfm_data.xlsx' ya 'wfm_data.csv')
+    return pd.read_excel("wfm_data.xlsx")
   except Exception as e:
-    st.sidebar.error(f"Error loading file: {e}")
-    df = None
-else:
-  df = None
+    try:
+      return pd.read_csv("wfm_data.csv")
+    except Exception as ex:
+      return None
+
+
+df = load_data()
 
 if df is not None:
-  st.title("📈 WFM Daily Performance Dashboard")
-  st.markdown("---")
-
   # Display raw data preview option
   if st.checkbox("Show Raw Data Preview"):
     st.dataframe(df.head(10))
@@ -72,12 +68,12 @@ if df is not None:
     else:
       filtered_df = df
   else:
-      filtered_df = df
+    filtered_df = df
 
   st.dataframe(filtered_df, use_container_width=True)
 
 else:
-  st.info(
-      "👉 Please upload your WFM raw data file using the sidebar option on the"
-      " left to view the report."
+  st.error(
+      "⚠️ Data file not found in repository! Please upload your data file"
+      " (`wfm_data.xlsx` or `wfm_data.csv`) to your GitHub repository."
   )
