@@ -62,7 +62,7 @@ if df is not None:
     if selected_queue != "All":
       df = df[df["Queue"] == selected_queue]
 
-  # --- CALCULATIONS & METRICS ---
+  # --- CALCULATIONS & METRICS (Safe checks) ---
   rec_calls = (
       df["Received Calls"].sum() if "Received Calls" in df.columns else 0
   )
@@ -79,8 +79,14 @@ if df is not None:
   # Derived Metrics
   calc_sla = (ans_sla / rec_calls * 100) if rec_calls > 0 else 0
 
-  # AHT calculation: Talktime / Answered Calls
-  total_talktime = df["Talktime"].sum() if "Talktime" in df.columns else 0
+  # Detect Talk Time column correctly
+  talktime_col = None
+  for col in ["Talk Time", "Talktime", "Handle Time", "AHT"]:
+    if col in df.columns:
+      talktime_col = col
+      break
+
+  total_talktime = df[talktime_col].sum() if talktime_col else 0
   aht = (total_talktime / ans_calls) if ans_calls > 0 else 0
 
   # --- KPI CARDS SECTION ---
@@ -98,7 +104,7 @@ if df is not None:
   with col5:
     st.metric(label="SLA %", value=f"{calc_sla:.2f}%")
   with col6:
-    st.metric(label="AHT (Sec/Min)", value=f"{aht:.2f}")
+    st.metric(label="AHT", value=f"{aht:.2f}")
 
   st.markdown("---")
 
@@ -108,56 +114,68 @@ if df is not None:
   )
 
   if group_col and not df.empty:
-    trend_df = (
-        df.groupby(group_col)
-        .agg({
-            "Received Calls": "sum",
-            "Answered Calls": "sum",
-            "Answered in SLA": "sum",
-            "Abandoned Calls": "sum",
-            "Talktime": "sum",
-        })
-        .reset_index()
-    )
+    agg_dict = {
+        "Received Calls": "sum" if "Received Calls" in df.columns else "count",
+        "Answered Calls": "sum" if "Answered Calls" in df.columns else "count",
+        "Answered in SLA": "sum" if "Answered in SLA" in df.columns else "count",
+        "Abandoned Calls": "sum" if "Abandoned Calls" in df.columns else "count",
+    }
+    if talktime_col:
+      agg_dict[talktime_col] = "sum"
 
-    # Calculate SLA% and AHT per group for lines
-    trend_df["SLA_Pct"] = (
-        trend_df["Answered in SLA"] / trend_df["Received Calls"] * 100
-    ).fillna(0)
-    trend_df["AHT"] = (
-        trend_df["Talktime"] / trend_df["Answered Calls"]
-    ).fillna(0)
+    trend_df = df.groupby(group_col).agg(agg_dict).reset_index()
+
+    # Calculate SLA% and AHT per group safely
+    if "Received Calls" in trend_df.columns and "Answered in SLA" in trend_df.columns:
+      trend_df["SLA_Pct"] = (
+          trend_df["Answered in SLA"] / trend_df["Received Calls"] * 100
+      ).fillna(0)
+    else:
+      trend_df["SLA_Pct"] = 0
+
+    if talktime_col and "Answered Calls" in trend_df.columns:
+      trend_df["AHT"] = (
+          trend_df[talktime_col] / trend_df["Answered Calls"]
+      ).fillna(0)
+    else:
+      trend_df["AHT"] = 0
 
     st.subheader(f"📈 Performance Trend Analysis (By {group_col})")
 
-    # Interactive metric selector for chart
+    # Available metrics for line chart
+    available_line_metrics = ["SLA_Pct"]
+    if talktime_col:
+      available_line_metrics.append("AHT")
+    if "Abandoned Calls" in trend_df.columns:
+      available_line_metrics.append("Abandoned Calls")
+
     chart_metric = st.selectbox(
         "Select Secondary Line Metric for Combination Chart",
-        ["SLA_Pct", "AHT", "Abandoned Calls"],
+        available_line_metrics,
     )
 
     # --- COLUMN & LINE COMBINATION CHART USING PLOTLY ---
     fig = go.Figure()
 
-    # Add Columns (Received & Answered Calls)
-    fig.add_trace(
-        go.Bar(
-            x=trend_df[group_col],
-            y=trend_df["Received Calls"],
-            name="Received Calls",
-            marker_color="#1f77b4",
-        )
-    )
-    fig.add_trace(
-        go.Bar(
-            x=trend_df[group_col],
-            y=trend_df["Answered Calls"],
-            name="Answered Calls",
-            marker_color="#2ca02c",
-        )
-    )
+    if "Received Calls" in trend_df.columns:
+      fig.add_trace(
+          go.Bar(
+              x=trend_df[group_col],
+              y=trend_df["Received Calls"],
+              name="Received Calls",
+              marker_color="#1f77b4",
+          )
+      )
+    if "Answered Calls" in trend_df.columns:
+      fig.add_trace(
+          go.Bar(
+              x=trend_df[group_col],
+              y=trend_df["Answered Calls"],
+              name="Answered Calls",
+              marker_color="#2ca02c",
+          )
+      )
 
-    # Add Line for selected performance indicator
     fig.add_trace(
         go.Scatter(
             x=trend_df[group_col],
@@ -169,7 +187,6 @@ if df is not None:
         )
     )
 
-    # Layout setup for dual-axis combination chart
     fig.update_layout(
         title=f"Call Volume Columns with {chart_metric} Trend Line",
         xaxis=dict(title=group_col),
